@@ -37,12 +37,12 @@ In aggiunta alle operazioni basilari sugli spazi di Tuple andremo ad integrare a
 Il sistema operativo su cui ho configurato l’ambiente di sviluppo del progetto è Windows 11, qui Erlang è disponibile come pacchetto precompilato semplificandone l’installazione e l’avvio del linguaggio. Questo comprende l’Erlang/OTP (Open Telecom Platform) che include il compilatore, il runtime e installa le librerie standard nel nostro pc.
 Per quanto riguarda l’editor ho utilizzato il classico notepad++ .
 Una cosa molto importante da fare è l’aggiunta del percorso dell’eseguibile di Erlang nell’ambiente di sviluppo di Windows per fare in modo di avviare i singoli nodi dalla shell del pc con un singolo comando.
-> werl -sname stefano@localhost
+ werl -sname stefano@localhost
 Questo comando ci avvia una finestra separata di erlang, creando un nodo locale con nome (short) stefano@localhost
 Questa parte è fondamentale in quanto durante i test tutti i nodi utilizzati per eseguire le prove sono locali all’interno della macchina. Una volta avviati tutti i nodi necessari sarà nostra premura stabilire un collegamento tra loro con il comando :
-> net_adm:ping(stefano@localhost).
+ net_adm:ping(stefano@localhost).
 Stabilita una connessione tra i nodi sarà necessario, al primo avvio, compilare i singoli file inclusi nel progetto attraverso il comando c(file). :
-> c(ts).
+ c(ts).
 Compilati tutti i file e stabilita una connessione tra i singoli nodi sarà possibile iniziare ad interagire con il nostro Tuple Space
 5. Scelte progettuali
 Il progetto è composto da 5 file con estensione .erl
