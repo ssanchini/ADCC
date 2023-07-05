@@ -19,16 +19,13 @@
 
 -record(tsstate, {space}).
 
-% Start an instance of ts_mgr for the tuple space
-% with given name.
-start_link(SpaceName) ->
-    gen_server:start_link({local, SpaceName}, ?MODULE, SpaceName, []).
+% avvia un istanza di ts_mgr per lo spazio di tuple dato
+start_link(TupleSpace) ->
+    gen_server:start_link({local, TupleSpace}, ?MODULE, TupleSpace, []).
 
-% This function must be called after a 'write_tuple' call to ts_mgr returns with {error, no_tuples},
-% this function listen to all the tuples inserted in the space from now on and matches all of them
-% with the given pattern; if a tuple matches or a timeout is reached this function stops listening to new
-% tuples and returns the mathed.
-% If timeout is set to 'infinity' or no tuple is matching this function wait indefinitly.
+% Questa funzione rimane in controllo di tutte le tuple inserite nello spazio e le confronta tutte
+% con il modello dato. se vi è una corrispondenza (o scade il timeout) l'ascolto viene interrotto
+% e viene restituito errore o il risultato
 subscribe_for_pattern(Space, Pattern, Timeout) ->
     mnesia:subscribe({table, Space, simple}),
     receive
@@ -45,14 +42,12 @@ subscribe_for_pattern(Space, Pattern, Timeout) ->
             {error, timeout}
     end.
 
-% qui eseguiamo le callbacks al gen_server 
-
-% init/1 callback from gen_server.
-init(SpaceName) ->
+% Eseguiamo le callbacks al gen_server 
+init(TupleSpace) ->
     process_flag(trap_exit, true),
-    {ok, #tsstate{space = SpaceName}}.
+    {ok, #tsstate{space = TupleSpace}}.
 
-% handle_call/3 callback from gen_server.
+% handle_call/3 callback al gen_server.
 handle_call({read_tuple, Pattern}, _From, State) ->
     Res = read_tuple(State#tsstate.space, Pattern),
     {reply, Res, State};
@@ -67,27 +62,25 @@ handle_call(stop, _From, _State) ->
 handle_call(_Request, _From, _State) ->
     {reply, {error, bad_request}, _State}.
 
-% handle_cast/2 callback from gen_server.
+% handle_cast/2 callback al gen_server.
 handle_cast(_Msg, _State) ->
     {noreply, _State}.
 
-% handle_info/2 callback from gen_server.
+% handle_info/2 callback al gen_server.
 handle_info(_Info, _State) ->
     {noreply, _State}.
 
-% terminate/2 callback from gen_server.
+% terminate/2 callback al gen_server.
 terminate(_Reason, _State) ->
     ok.
 
-% code_change/3 callback from gen_server.
+% code_change/3 callback al gen_server.
 code_change(_OldVsn, _State, _Extra) ->
     {ok, _State}.
 
-%%%%%%%%%%%%%%%%%%%%
 % Funzioni interne
-%%%%%%%%%%%%%%%%%%%%
 
-% Read a tuple matching given pattern.
+% Legge dati dallo spazio di Tuple.
 read_tuple(Space, Pattern) -> 
     case mnesia:transaction(fun() ->
         lists:filter(fun(T) -> 
@@ -99,7 +92,7 @@ read_tuple(Space, Pattern) ->
         {aborted, Reason} -> {error, Reason}
     end.
 
-% Insert the given tuple in the tuple space.
+% Inserisce dati nello spazio di tuple
 write_tuple(_, {}) -> ok;
 write_tuple(Space, Tuple) -> 
     case mnesia:transaction(fun() ->
@@ -109,14 +102,13 @@ write_tuple(Space, Tuple) ->
         {aborted, Reason} -> {error, Reason}
     end.
 
-% Remove the given tuple from the tuple space.
+% Rimuove i dati passati dal comando allo spazio di tuple
 delete_tuple(_, {}) -> ok;
 delete_tuple(Space, Tuple) -> 
     case mnesia:transaction(fun() ->
-        % read the tuple in the db
+        % cerca i risultati 
         ReadResult = lists:filter(fun(T) -> match(Tuple, element(3,T)) end, mnesia:read({Space, tuple_size(Tuple)})),
-        % if the tuple is present remove it otherwise abort the transaction and keep waiting,
-        % someone else has deleted it before
+        % se il pattern matching è presente rimuove i dati altrimenti rimane in attesa fino 
         case ReadResult of
             [] -> mnesia:abort({no_tuples});
             [_] -> mnesia:delete_object({Space, tuple_size(Tuple), Tuple})
@@ -126,11 +118,9 @@ delete_tuple(Space, Tuple) ->
         {aborted, {no_tuples}} -> {error, no_tuples};
         {aborted, Reason} -> {error, Reason}
     end.
-
-% Given a pattern and a tuple verify that the tuple matches
-% the pattern. the pattern and the tuple are both tuples, but for matching
-% are converted info lists, then every element if checked recursively until
-% one differs or every element equals.
+% Dato un pattern matching e una tupla verificarne la presenza all'interno di essa.
+% i dati del pattern matching vengono letti come una lista all'interno della tabella, 
+% ed ogni elemento è ricercato ricorsivamente in questa lista
 match(Pattern, Tuple) when is_tuple(Pattern), is_tuple(Tuple) -> 
     match(tuple_to_list(Pattern), tuple_to_list(Tuple));
 match([], []) -> true;
@@ -148,11 +138,9 @@ match(Pattern, Tuple) when is_list(Pattern), is_list(Tuple) ->
             end
     end.
 
-% Given two elements, E1 an element from a pattern, E2 an element from
-% a tuple, verify that the two elements match.
-% If E1 is the atom 'any' the function returns true without checking
-% E2, if E1 and E2 are both tuples/lists/maps their elements are checked
-% recursively, otherwise it's checked the simple equality.
+% Dati due elementi, E1 un elemento da un modello ed E2 elemento di una tupla, si verifica che i 
+% due elementi corrispondono. Se E1 è l'atomo "any" la funzione restituisce vero senza controllo
+% altimenti i loro elementi vengono controllati e matchati 
 match_element(E1, _) when E1 == any -> true;
 match_element(E1, E2) when is_tuple(E1), is_tuple(E2) -> match(E1, E2);
 match_element(E1, E2) when is_list(E1), is_list(E2) -> match(E1, E2);

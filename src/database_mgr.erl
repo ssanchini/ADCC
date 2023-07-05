@@ -2,12 +2,11 @@
 
 -behaviour(gen_server).
 
-% Public API.
 -export([
-    add_node_to_space/2,
-    create_new_space/1,
-    list_nodes_in_space/1,
-    remove_node_from_space/2,
+    aggiungi_nodo_a_ts/2,
+    crea_nuovo_ts/1,
+    lista_nodi_ts/1,
+    rimuovi_nodo_da_ts/2,
     start_link/0
 ]).
 
@@ -21,14 +20,14 @@
     terminate/2
 ]).
 
-% Creates a new tuple space local to this node.
-create_new_space(SpaceName) ->
-    gen_server:call(?MODULE, {create_space, SpaceName}).
+% Crea un nuovo spazio di tuple allocato in questo nodo
+crea_nuovo_ts(TupleSpace) ->
+    gen_server:call(?MODULE, {crea_ts, TupleSpace}).
 
-% Adds given node to given tuple space.
-add_node_to_space(Node, Space) -> 
+% Aggiunge un nodo allo spazio di tuple
+aggiungi_nodo_a_ts(Node, Space) -> 
     try 
-        NodeInSpace = is_node_in_space(node(), Space),
+        NodeInSpace = nodo_presente_nel_ts(node(), Space),
         if
             NodeInSpace ->
                 gen_server:call({?MODULE, Node}, {enter_space, Space});
@@ -39,10 +38,10 @@ add_node_to_space(Node, Space) ->
         _:Error -> {error, Error}
     end.
 
-% Remove given node from given tuple space.
-remove_node_from_space(Node, Space) when is_atom(Node), is_atom(Space) -> 
+% Rimuove il nodo selezionato dallo spazio di tuple 
+rimuovi_nodo_da_ts(Node, Space) when is_atom(Node), is_atom(Space) -> 
     try
-        NodeInSpace = is_node_in_space(node(), Space),
+        NodeInSpace = nodo_presente_nel_ts(node(), Space),
         if
             NodeInSpace ->
                 gen_server:call({?MODULE, Node}, {exit_space, Space});
@@ -53,93 +52,89 @@ remove_node_from_space(Node, Space) when is_atom(Node), is_atom(Space) ->
         _:Error -> {error, Error}
     end.
 
-% Returns a list of all nodes in this tuple space.
-list_nodes_in_space(Space) -> 
-    IsNodeInSpace = is_node_in_space(node(), Space),
+% Ritorna una lista di tutti i nodi collegati al TS
+lista_nodi_ts(Space) -> 
+    IsNodeInSpace = nodo_presente_nel_ts(node(), Space),
     if
-        IsNodeInSpace -> gen_server:call(?MODULE, {nodes_in_space, Space});
+        IsNodeInSpace -> gen_server:call(?MODULE, {nodi_del_ts, Space});
         true -> {error, {node_not_in_space, node(), Space}}
     end.
 
-% Start an instance of db.
+% Avvia un istanza del database da gen_server
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-%%%%%%%%%%%%%%%%%%%%%%
-% gen_server callbacks
-%%%%%%%%%%%%%%%%%%%%%%
 
-% init/1 callback from gen_server.
+% init/1 callback da gen_server.
 init(_Args) ->
     process_flag(trap_exit, true),
-    % Start mnesia with the default schema;
-    % the schema is manipulated with messages.
+    % Avvia il database mnesia con schema standard
     case init_cluster() of
         ok -> {ok, []};
         {error, Reason} -> {stop, Reason}
     end.
 
-% handle_call/3 callback from gen_server.
-handle_call({create_space, Name}, _From, _State) ->
-    % Create a new space with given name and start a new ts_mgr
-    Res = case create_space(Name) of
+% handle_call/3 callback da gen_server.
+handle_call({crea_ts, Name}, _From, _State) ->
+    % Crea un nuovo TS con Name e avvia un nuovo ts_mgr
+    Res = case crea_ts(Name) of
         ok -> ts_supervisor:add_space_manager(Name);
         Error -> Error
     end,
     {reply, Res, _State};
 handle_call({enter_space, Space}, _From, _State) ->
-    % Add this node to given space and start a new ts_mgr
-    Res = case addme_to_space(Space) of
+    % Aggiunge questo nodo al TS e avvia un nuovo ts_mgr
+    Res = case aggiungi_al_ts(Space) of
         ok -> ts_supervisor:add_space_manager(Space);
         Error -> Error
     end,
     {reply, Res, _State};
 handle_call({exit_space, Space}, _From, _State) ->
-    % Remove this node form given space and stop his ts_mgr
-    Res = case removeme_from_space(Space) of
+    % Rimuove il nodo dal TS e ferma il ts_mgr
+    Res = case rimuovi_dal_ts(Space) of
         ok -> ts_supervisor:del_space_manager(Space);
         Error -> Error
     end,
     {reply, Res, _State};
-handle_call({nodes_in_space, Space}, _From, _State) ->
-    % List all nodes in given space
-    Nodes = nodes_in_space(Space),
+handle_call({nodi_del_ts, Space}, _From, _State) ->
+    % Elenco di tutti i nodi collegati al TS
+    Nodes = nodi_del_ts(Space),
     {reply, {ok, Nodes}, _State};
 handle_call(stop, _From, _State) ->
     {stop, normal, stopped, _State};
 handle_call(_Request, _From, _State) ->
     {reply, {error, bad_request}, _State}.
 
-% handle_cast/2 callback from gen_server.
+% handle_cast/2 callback da gen_server.
 handle_cast(_Msg, _State) ->
     {noreply, _State}.
 
-% handle_info/2 callback from gen_server.
+% handle_info/2 callback da gen_server.
 handle_info(_Info, _State) ->
     {noreply, _State}.
 
-% terminate/2 callback from gen_server.
+% terminate/2 callback da gen_server.
 terminate(_Reason, _State) ->
     ensure_stopped(),
     ok.
 
-% code_change/3 callback from gen_server.
+% code_change/3 callback da gen_server.
 code_change(_OldVsn, _State, _Extra) ->
     {ok, _State}.
 
 % Funzioni interne
 
-% Ensures mnesia db is running.
+% Qui ci assicuriamo che il database mnesia sia avviato correttamente
 ensure_started() -> 
     mnesia:start(),
     wait_for(start).
 
-% Ensures mnesia db is not running.
+% Qui ci assicuriamo che il database mnesia sia stato fermato
 ensure_stopped() -> 
     mnesia:stop(),
     wait_for(stop).
 
-% Wait for mnesia db to start/stop.
+% Attende che il db mnesia sia in start/stop 
 wait_for(start) -> 
     case mnesia:system_info(is_running) of
         yes -> ok;
@@ -159,8 +154,7 @@ wait_for(stop) ->
             wait_for(stop)
     end.
 
-% Initialize the main cluster with all the nodes 
-% connected to the colling one.
+% Inizializza il cluster contenente tutti i nodi
 init_cluster() ->
     try
         ok = ensure_started(),
@@ -176,8 +170,8 @@ init_cluster() ->
         _:Error -> {error, Error}
     end.
 
-% Set all nodes as extra_db_nodes end if the schema merge fail
-% clear the schema and sync with the cluster.
+% Setta tutti i nodi come extra_db_nodes end se l'unione dello schema fallisce
+% cancella lo schema e si sincronizza con il cluster.
 sync_cluster() ->
     case mnesia:change_config(extra_db_nodes, nodes()) of
         {ok, _} -> ok;
@@ -189,7 +183,7 @@ sync_cluster() ->
             ok
     end.
 
-% Creates a mnesia schema as disc_copies.
+% Crea uno schema mnesia come disc_copys..
 create_disc_schema() -> 
     case mnesia:change_table_copy_type(schema, node(), disc_copies) of
         {atomic, ok} -> ok;
@@ -197,16 +191,14 @@ create_disc_schema() ->
         {aborted, Reason} -> {error, Reason}
     end.
 
-% Ensure the nodes table is present in the current cluster
-% every node must have this table so if it's not present we
-% create it.
+% Si assicura che la tabella dei nodi sia presente nel cluster corrente
+% ogni nodo deve avere questa tabella quindi se non è presente lo crea
 ensure_nodes_table() ->
     Exist = lists:member(nodes, mnesia:system_info(tables)),
     if 
         Exist -> 
-            % Check if the nodes table is a disc_copy or remote;
-            % if it's remote or ram_copies (if it is it's a bug) copy
-            % it locally
+            % Controlla se la tabella dei nodi è un disc_copy o remoto;
+            % se è remoto o ram_copies lo copia localmente
             case mnesia:table_info(nodes, storage_type) of
                 disc_copies -> ok;
                 _ -> 
@@ -217,7 +209,7 @@ ensure_nodes_table() ->
                     end
             end;
         true -> 
-            % Create a new nodes table
+            % Crea una nuova tabella di nodi
             case mnesia:create_table(nodes, 
                 [{type, bag}, {disc_copies, [node()]}]) of
                 {atomic, ok} -> ok;
@@ -226,8 +218,8 @@ ensure_nodes_table() ->
             end
     end.
 
-% Wait for all the tables locally stored in the node (nodes+spaces) to be
-% fully loaded and force the load if it fails.
+% Attende che tutte le tabelle memorizzate localmente nel nodo siano completamente 
+% caricate e forza il caricamente in caso di fallimento
 wait_for_tables() ->
     Tables = lists:filter(fun(Table) ->
         mnesia:table_info(Table, storage_type) =:= disc_copies
@@ -241,11 +233,9 @@ wait_for_tables() ->
             ok
     end.
 
-% Restart ts_managager for all spaces where the local node
-% is in.
-% This function is usefull when the node is restarted and all
-% the old spaces are still present, their ts_mgr will be
-% restarted
+% Riavvia ts_managager per tutti gli spazi in cui si trova il nodo locale.
+% Questa funzione è utile quando il nodo viene riavviato e tutti gli spazi 
+% sono ancora presenti in modo che i loro ts_mgr vengano riavviati
 restart_space_managers() ->
     {atomic, SpacesRecords} = mnesia:transaction(fun() ->
         mnesia:match_object({nodes, '_', node()})
@@ -255,42 +245,38 @@ restart_space_managers() ->
     end, SpacesRecords),
     ok.
 
-% Create a new tuple space with given name.
-% This function returns error if a space with the same
-% name already exist.
-create_space(Name) ->
+% Crea una nuova TS con Name con errore se il nome esiste
+crea_ts(Name) ->
     try
         {atomic, ok} = mnesia:create_table(Name, [{type, bag}, {disc_copies, [node()]}]),
-        {atomic, ok} = addme_to_nodes_unsafe(Name),
+        {atomic, ok} = aggiungi_nodo_a_tabella(Name),
         ok
     catch
         error:{badmatch, {aborted, Error}} -> {error, Error}
     end.
 
-% Add this node to the given tuple space.
-% This function returns error if the node is already in the tuple space
-addme_to_space(Space) ->
+% Aggiunge il nodo alla TS con errore se già presente
+aggiungi_al_ts(Space) ->
     try
         {atomic, ok} = mnesia:add_table_copy(Space, node(), disc_copies),
-        {atomic, ok} = addme_to_nodes_unsafe(Space),
+        {atomic, ok} = aggiungi_nodo_a_tabella(Space),
         ok
     catch
         error:{badmatch,{aborted, Error}} -> {error, Error}
     end.
 
-% Remove this node from the given tuple space.
-% This function returns error if the node is not in the tuple space
-removeme_from_space(Space) ->
+% Rimuove il nodo dalla TS con errore se non presente
+rimuovi_dal_ts(Space) ->
     try
         {atomic, ok} = mnesia:del_table_copy(Space, node()),
-        {atomic, ok} = delme_to_nodes_unsafe(Space),
+        {atomic, ok} = rimuovi_nodo_da_tabella(Space),
         ok
     catch
         error:{badmatch, {aborted, Error}} -> {error, Error}
     end.
 
-% List all nodes connected to the given tuple space.
-nodes_in_space(Space) ->
+% Mostra l'elenco di tutti i nodi della TS.
+nodi_del_ts(Space) ->
     case mnesia:transaction(fun() ->
         mnesia:read(nodes, Space)
     end) of
@@ -298,16 +284,15 @@ nodes_in_space(Space) ->
         {aborted, _} -> []
     end.
 
-% Returns true if the given node is in the given space; false otherwise.
-is_node_in_space(Node, Space) ->
-    lists:member(Node, nodes_in_space(Space)).
+% Restituisce true se il nodo è presente nella TS altrimenti false
+nodo_presente_nel_ts(Node, Space) ->
+    lists:member(Node, nodi_del_ts(Space)).
 
-% Add the current node to the given space inside the nodes shared table.
-% This operation is usafe because it resurns unsafe_result like the mnesia ones.
-addme_to_nodes_unsafe(Space)->
+% Aggiunge il nodo alla TS presente nelle tabelle
+% Utilizziamo questa funzione perché restituisce unsafe_result come quelli di mnesia.
+aggiungi_nodo_a_tabella(Space)->
     mnesia:transaction(fun() -> mnesia:write({nodes, Space, node()}) end).
 
-% Remove the current node from the given space inside the nodes shared table.
-% This operation is usafe because it resurns unsafe_result like the mnesia ones.
-delme_to_nodes_unsafe(Space) ->
+% Rimuove il nodo corrente dalla TS data all'interno della tabella condivisa dei nodi.
+rimuovi_nodo_da_tabella(Space) ->
     mnesia:transaction(fun() -> mnesia:delete_object({nodes, Space, node()}) end).

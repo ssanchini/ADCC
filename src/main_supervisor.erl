@@ -7,13 +7,13 @@
 % supervisor callbaks.
 -export([init/1]).
 
-% Start a new instance of main_supervisor.
+% Avvia una nuova istanza di main_supervisor.
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 % supervisor callbaks
 
-% init/1 callback from supervisor.
+% init/1 callback dal supervisor.
 init(_Args) ->
     SupFlags = #{
         strategy => one_for_one,

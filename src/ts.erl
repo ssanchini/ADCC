@@ -6,13 +6,13 @@
 
 -export([addNode/2, nodes/1, removeNode/2]).
 
-% Avvia l'applicazione ts sul nodo 
+% Start Application main_supervisor 
 start() -> 
     main_supervisor:start_link().
 
 % Creates a new TS named with name
 new(Name) -> 
-    database_mgr:create_new_space(Name).
+    database_mgr:crea_nuovo_ts(Name).
 
 % Returns a tuple matching the pattern in the TS and deletes if from the TS
 % Blocks if there is no tuple matching
@@ -35,7 +35,7 @@ in(Ts, Pattern, Timeout)->
         Error -> Error
     end.
 
-% % Returns a tuple matching the pattern in the TS
+% Returns a tuple matching the pattern in the TS
 % The tuple remains in the TS
 % Blocks if there is no tuple matching 
 rd(Ts, Pattern) -> 
@@ -55,13 +55,13 @@ out(Ts, Tuple) ->
 
 % Adds the Node to the TS, so Node can access to all the tuples of TS
 addNode(Ts, Node) -> 
-    database_mgr:add_node_to_space(Node, Ts).
+    database_mgr:aggiungi_nodo_a_ts(Node, Ts).
 
 % Removes a node from the TS
 removeNode(Ts, Node) -> 
-    database_mgr:remove_node_from_space(Node, Ts).
+    database_mgr:rimuovi_nodo_da_ts(Node, Ts).
  
 % Tells the nodes on which the TS is visible/replicated
 nodes(Ts) -> 
-    database_mgr:list_nodes_in_space(Ts).
+    database_mgr:lista_nodi_ts(Ts).
 
